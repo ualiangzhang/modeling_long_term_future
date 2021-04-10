@@ -221,7 +221,8 @@ class RoomGrid(MiniGridEnv):
         assert room.doors[door_idx] is None, "door already exists"
 
         if locked:
-            door = LockedDoor(color)
+            # door = LockedDoor(color)  # abandoned in the recent version
+            door = Door(color, is_locked=True)
             room.locked = True
         else:
             door = Door(color)

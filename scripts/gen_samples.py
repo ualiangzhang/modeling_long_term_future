@@ -28,7 +28,7 @@ parser.add_argument("--deterministic", action="store_true", default=False,
 
 def write_samples(all_samples_obs, all_samples_actions, filename):
     # write to pickle file
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     all_data = list(zip(all_samples_obs, all_samples_actions))
     output = open(filename, "wb")
     pickle.dump(all_data, output)
@@ -63,7 +63,7 @@ def evaluate(agent, env, episodes):
             num_frames += 1
             returnn += reward
         
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         all_samples_obs.append(expert_obs)
         all_samples_actions.append(expert_actions)
         if (ep + 1) % 1000 == 0:

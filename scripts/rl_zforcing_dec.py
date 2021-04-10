@@ -1,21 +1,15 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import torch
 import torch.nn as nn
-import torchvision.transforms as transforms
 from torch.nn import Parameter
 from torch.autograd import Variable
-import torchvision.datasets as dsets
-import time
-import click
-import numpy
 import numpy as np
-import os
-import random
-from itertools import chain
 import torch.nn.functional as F
-from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
+# from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
+# from torch_obsolete.nn._functions.thnn import rnnFusedPointwise as fusedBackend
 import math
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class View(nn.Module):
     def __init__(self, *args):
@@ -32,7 +26,7 @@ def log_prob_gaussian(x, mu, log_vars, mean=False):
     return torch.sum(lp, -1)
 
 def log_prob_bernoulli(x, mu):
-    lp = x * torch.log(mu + 1e-5) + (1. - y) * torch.log(1. - mu + 1e-5)
+    lp = x * torch.log(mu + 1e-5) + (1. - x) * torch.log(1. - mu + 1e-5)
     return lp
 
 
@@ -68,74 +62,74 @@ class LayerNorm(nn.Module):
         return z * gain.expand_as(z) + bias.expand_as(z)
 
 
-class LSTMCell(nn.Module):
-    """A basic LSTM cell."""
-
-    def __init__(self, input_size, hidden_size, use_layernorm=False):
-        """
-        Most parts are copied from torch.nn.LSTMCell.
-        """
-
-        super(LSTMCell, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.use_layernorm = use_layernorm
-        self.has_bias = not self.use_layernorm
-        if self.use_layernorm:
-            self.use_bias = False
-        print("LSTMCell: use_layernorm=%s" % use_layernorm)
-        self.weight_ih = nn.Parameter(
-            torch.FloatTensor(input_size, 4 * hidden_size))
-        self.weight_hh = nn.Parameter(
-            torch.FloatTensor(hidden_size, 4 * hidden_size))
-        if self.use_layernorm:
-            self.ln_ih = LayerNorm(4 * hidden_size)
-            self.ln_hh = LayerNorm(4 * hidden_size)
-        else:
-            self.bias_ih = Parameter(torch.FloatTensor(4 * hidden_size))
-            self.bias_hh = Parameter(torch.FloatTensor(4 * hidden_size))
-        self.init_weights()
-
-    def init_weights(self):
-        """
-        Initialize parameters following the way proposed in the paper.
-        """
-        stdv = 1.0 / np.sqrt(self.hidden_size)
-        self.weight_ih.data.uniform_(-stdv, stdv)
-        nn.init.orthogonal(self.weight_hh.data)
-        if self.has_bias:
-            self.bias_ih.data.fill_(0)
-            self.bias_hh.data.fill_(0)
-
-    def forward(self, input_, hx,
-                gain_ih=None, gain_hh=None,
-                bias_ih=None, bias_hh=None):
-        """
-        Args:
-            input_: A (batch, input_size) tensor containing input
-                features.
-            hx: A tuple (h_0, c_0), which contains the initial hidden
-                and cell state, where the size of both states is
-                (batch, hidden_size).
-        Returns:
-            h_1, c_1: Tensors containing the next hidden and cell state.
-        """
-        assert input_.is_cuda
-        h_0, c_0 = hx
-        igates = torch.mm(input_, self.weight_ih)
-        hgates = torch.mm(h_0, self.weight_hh)
-        state = fusedBackend.LSTMFused()
-        if self.use_layernorm:
-            igates = self.ln_ih(igates, gain=gain_ih, bias=bias_ih)
-            hgates = self.ln_hh(hgates, gain=gain_hh, bias=bias_hh)
-            return state.apply(igates, hgates, c_0)
-        else:
-            return state.apply(igates, hgates, c_0,
-                         self.bias_ih, self.bias_hh)
-
-    def __repr__(self):
-        s = '{name}({input_size}, {hidden_size})'
-        return s.format(name=self.__class__.__name__, **self.__dict__)
+# class LSTMCell(nn.Module):
+#     """A basic LSTM cell."""
+#
+#     def __init__(self, input_size, hidden_size, use_layernorm=False):
+#         """
+#         Most parts are copied from torch.nn.LSTMCell.
+#         """
+#
+#         super(LSTMCell, self).__init__()
+#         self.input_size = input_size
+#         self.hidden_size = hidden_size
+#         self.use_layernorm = use_layernorm
+#         self.has_bias = not self.use_layernorm
+#         if self.use_layernorm:
+#             self.use_bias = False
+#         print("LSTMCell: use_layernorm=%s" % use_layernorm)
+#         self.weight_ih = nn.Parameter(
+#             torch.FloatTensor(input_size, 4 * hidden_size))
+#         self.weight_hh = nn.Parameter(
+#             torch.FloatTensor(hidden_size, 4 * hidden_size))
+#         if self.use_layernorm:
+#             self.ln_ih = LayerNorm(4 * hidden_size)
+#             self.ln_hh = LayerNorm(4 * hidden_size)
+#         else:
+#             self.bias_ih = Parameter(torch.FloatTensor(4 * hidden_size))
+#             self.bias_hh = Parameter(torch.FloatTensor(4 * hidden_size))
+#         self.init_weights()
+#
+#     def init_weights(self):
+#         """
+#         Initialize parameters following the way proposed in the paper.
+#         """
+#         stdv = 1.0 / np.sqrt(self.hidden_size)
+#         self.weight_ih.data.uniform_(-stdv, stdv)
+#         nn.init.orthogonal(self.weight_hh.data)
+#         if self.has_bias:
+#             self.bias_ih.data.fill_(0)
+#             self.bias_hh.data.fill_(0)
+#
+#     def forward(self, input_, hx,
+#                 gain_ih=None, gain_hh=None,
+#                 bias_ih=None, bias_hh=None):
+#         """
+#         Args:
+#             input_: A (batch, input_size) tensor containing input
+#                 features.
+#             hx: A tuple (h_0, c_0), which contains the initial hidden
+#                 and cell state, where the size of both states is
+#                 (batch, hidden_size).
+#         Returns:
+#             h_1, c_1: Tensors containing the next hidden and cell state.
+#         """
+#         assert input_.is_cuda
+#         h_0, c_0 = hx
+#         igates = torch.mm(input_, self.weight_ih)
+#         hgates = torch.mm(h_0, self.weight_hh)
+#         state = fusedBackend.LSTMFused()
+#         if self.use_layernorm:
+#             igates = self.ln_ih(igates, gain=gain_ih, bias=bias_ih)
+#             hgates = self.ln_hh(hgates, gain=gain_hh, bias=bias_hh)
+#             return state.apply(igates, hgates, c_0)
+#         else:
+#             return state.apply(igates, hgates, c_0,
+#                          self.bias_ih, self.bias_hh)
+#
+#     def __repr__(self):
+#         s = '{name}({input_size}, {hidden_size})'
+#         return s.format(name=self.__class__.__name__, **self.__dict__)
 
 
 class LReLU(nn.Module):
@@ -242,10 +236,11 @@ class ZForcing(nn.Module):
             )
         self.softmax = torch.nn.Softmax()
         self.bwd_mod = nn.LSTM(emb_dim, rnn_dim, nlayers)
-        nn.init.orthogonal(self.bwd_mod.weight_hh_l0.data)
-        self.fwd_mod = LSTMCell(
-            emb_dim if cond_ln else emb_dim + mlp_dim,
-            rnn_dim, use_layernorm=cond_ln)
+        nn.init.orthogonal_(self.bwd_mod.weight_hh_l0.data)
+        # self.fwd_mod = LSTMCell(
+        #     emb_dim if cond_ln else emb_dim + mlp_dim,
+        #     rnn_dim, use_layernorm=cond_ln)
+        self.fwd_mod = nn.LSTM(emb_dim + mlp_dim, rnn_dim)
         self.pri_mod = nn.Sequential(
             nn.Linear(rnn_dim, mlp_dim),
             LReLU(),
@@ -376,9 +371,16 @@ class ZForcing(nn.Module):
                 h_new, c_new = self.fwd_mod(x_step, (h_step, c_step),
                                             gain_hh=gain_hh, bias_hh=bias_hh)
             else:
-                h_new, c_new = self.fwd_mod(torch.cat((i_step, x_step), 1),
-                                            (h_step, c_step))
-            states.append((h_new, c_new))
+                # h_new, c_new = self.fwd_mod(torch.unsqueeze(torch.cat((i_step, x_step), 1), 0),
+                #                             (torch.unsqueeze(h_step, 0), torch.unsqueeze(c_step, 0)))
+                _, h_c_new = self.fwd_mod(torch.unsqueeze(torch.cat((i_step, x_step), 1), 0),
+                                            (torch.unsqueeze(h_step, 0), torch.unsqueeze(c_step, 0)))
+            # h_new = torch.squeeze(h_new)
+            # c_new = list(c_new)
+            # c_new[0] = torch.squeeze(c_new[0])
+            # c_new[1] = torch.squeeze(c_new[1])
+            # c_new = tuple(c_new)
+            states.append((torch.squeeze(h_c_new[0]), torch.squeeze(h_c_new[1])))
             klds.append(kld)
             zs.append(z_step)
             aux_cs.append(aux_step)
@@ -409,7 +411,7 @@ class ZForcing(nn.Module):
     def bwd_pass(self, x, y, hidden):
         idx = np.arange(x.size(0))[::-1].tolist()
         idx = torch.LongTensor(idx)
-        idx = Variable(idx).cuda()
+        idx = Variable(idx).to(device)
         # invert the targets and revert back
         x_bwd = x.index_select(0, idx)
 

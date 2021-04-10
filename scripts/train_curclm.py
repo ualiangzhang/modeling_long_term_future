@@ -84,7 +84,7 @@ for i in range(args.procs):
     envs.append(env)
 
 # Define model name
-import ipdb; ipdb.set_trace()
+import ipdb; ipdb.set_trace()  # type in ACModel
 suffix = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
 instr = args.isntr_model if args.instr_model else "noinstr"
 mem = "mem" if not args.no_mem else "nomem"
